@@ -1,0 +1,9 @@
+torch
+transformers
+datasets
+sentence-transformers # For Sentence-T5 likely
+scikit-learn # For logistic regression classifiers
+accelerate # Often useful for training with Hugging Face libraries
+tensorboard # For logging
+pyyaml # For config files
+# Add others as identified (e.g., for MAUVE, specific samplers)
