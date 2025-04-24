@@ -100,3 +100,53 @@ The next step involves acquiring the datasets required for training and evaluati
     * **Interrupted Downloads:** If a download is interrupted, the script might leave a partial folder in the `download_dir`. To ensure a clean download, delete the specific dataset's folder within `download_dir` and re-run the script.
 
 This script handles the initial acquisition of the datasets. The next crucial part of Step 2 is implementing the preprocessing logic.
+
+## Step 3: Fine-tuning Decoder & Prompt Generator (Semantic Conditioning)
+
+This stage implements Section 3.1 of the DGLM paper, where the auto-regressive decoder (e.g., GPT-2 Large) is fine-tuned simultaneously with a `PromptGenerator` model. The goal is to teach the decoder to generate text continuations based on semantic information provided via soft prompts, simulating the eventual output of the diffusion model.
+
+**Components Involved:**
+
+* **`models/prompt_generator.py`**: Defines the Transformer-based Prompt Generator architecture.
+* **`data/datasets.py`**: Contains `C4TrainingDataset` to stream C4 data.
+* **`data/data_collator.py`**: Includes `DataCollatorForDecoderFineTuning`, which dynamically filters C4 data, applies noise augmentation to ground-truth continuation embeddings (from a frozen Sentence-T5), generates soft prompts using the `PromptGenerator`, and prepares batches for the decoder.
+* **`scripts/train_decoder.py`**: Orchestrates the fine-tuning process using the Hugging Face `Trainer` and includes the `DecoderWithPromptGenerator` wrapper class to manage joint optimization.
+
+**Running the Fine-tuning Script:**
+
+1.  **Activate Environment:**
+    ```bash
+    conda activate dglm-env
+    ```
+2.  **Login (Optional but Recommended):**
+    * For WandB logging: `wandb login`
+    * For pushing to Hub: `huggingface-cli login`
+3.  **Execute Training:**
+    Run the training script from the project root directory. Adjust `--per_device_train_batch_size` based on your GPU memory.
+    ```bash
+    python scripts/train_decoder.py \
+        --output_dir models/decoder_promptgen_finetuned_run1 \
+        --c4_subset_path data/raw/c4 \
+        --per_device_train_batch_size 2 \
+        --report_to wandb \
+        --logging_steps 100 \
+        --save_steps 5000 \
+        --max_steps 250000 \
+        # --push_to_hub \ # Uncomment to enable pushing to Hub
+        # --hub_model_name dglm-decoder-promptgen-v1 # Optional: specific Hub name
+    ```
+    * Monitor GPU memory; decrease batch size (e.g., to 1) if needed. Gradient accumulation is handled automatically to target an effective batch size near 64.
+    * Check other arguments in the script (e.g., learning rate, warmup steps) and adjust if necessary.
+
+**Monitoring Training (WandB Example):**
+
+* If using `--report_to wandb`, the script will output a URL like `https://wandb.ai/<your-username>/<project-name>/runs/<run-id>`.
+* Open this URL in your browser.
+* Navigate to the "Charts" section and observe the `train/loss` plot. The loss should decrease over training steps.
+
+**Expected Outcome:**
+
+* Training logs and checkpoints will be saved locally in the specified `--output_dir`.
+* If `--push_to_hub` is enabled, checkpoints and the final model (containing both the fine-tuned decoder and the trained prompt generator) will be uploaded to your Hugging Face Hub repository.
+* This fine-tuned decoder and prompt generator are essential inputs for the subsequent steps involving the diffusion model.
+
