@@ -69,6 +69,34 @@ This project relies on pre-trained models from Hugging Face. The script `models/
 
 This script confirms that your environment can access and load the necessary base models required for the next steps in the DGLM implementation plan.
 
-## Citation
+## Data Acquisition (Implementation Step 2a)
 
-Lovelace, J., Kishore, V., Chen, Y., & Weinberger, K. Q. (2024). *Diffusion Guided Language Modeling*. arXiv preprint arXiv:2408.04220. [cite: 1]
+The next step involves acquiring the datasets required for training and evaluation, as listed in the DGLM paper[cite: 112, 117, 119, 120, 151]. The script `data/download_data.py` uses the Hugging Face `datasets` library to download these datasets into a local directory (default: `data/raw/`).
+
+1.  **Datasets Downloaded:**
+    The script attempts to download:
+    * C4 (`allenai/c4`) - *Note: Requires significant disk space and subsequent subsetting.*
+    * OpenWebText (`stas/openwebtext-10k`) - *Note: Sample version.*
+    * Jigsaw Toxicity (`jigsaw_toxicity_pred`) - *Note: Verify this matches the paper's exact dataset.*
+    * RealToxicityPrompts (`allenai/real-toxicity-prompts`)
+    * Amazon Polarity (`amazon_polarity`)
+    * SST-2 (`glue/sst2`)
+    * AG News (`ag_news`)
+
+2.  **Running the Download Script:**
+    Make sure your `dglm-env` Conda environment is active and run the script from the project's root directory:
+    ```bash
+    python data/download_data.py
+    ```
+    You can specify a different download directory using the `--download_dir` argument:
+    ```bash
+    python data/download_data.py --download_dir /path/to/your/large/storage
+    ```
+
+3.  **Important Notes:**
+    * **Disk Space:** Be aware that C4, in particular, is very large (hundreds of GB). Ensure you have sufficient disk space before running the script.
+    * **C4 Subsetting Required:** This script downloads the *full* C4 dataset. You **must** implement separate logic (likely in `data/preprocess.py`) to filter this down to the 10 million instances mentioned in the paper[cite: 112].
+    * **Jigsaw Dataset:** Double-check if the downloaded `jigsaw_toxicity_pred` dataset corresponds to the "Jigsaw Unintended Bias" dataset cited in the paper[cite: 119]. You may need to find an alternative source or configuration if it doesn't align.
+    * **Interrupted Downloads:** If a download is interrupted, the script might leave a partial folder in the `download_dir`. To ensure a clean download, delete the specific dataset's folder within `download_dir` and re-run the script.
+
+This script handles the initial acquisition of the datasets. The next crucial part of Step 2 is implementing the preprocessing logic.
