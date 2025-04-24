@@ -1,0 +1,4 @@
+# config/base_config.yaml
+sentence_encoder_model_name: "sentence-transformers/sentence-t5-xl"
+auto_regressive_model_name: "openai-community/gpt2-large"
+# ... other configs
