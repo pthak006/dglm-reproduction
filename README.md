@@ -46,9 +46,28 @@ Follow these steps to set up the project environment and install necessary depen
     pip install -r requirements.txt
     ```
 
-## Usage (To be added)
+## Loading Foundational Models (Implementation Step 1)
 
-*(This section will later describe how to run data preprocessing, training, generation, and evaluation scripts).*
+This project relies on pre-trained models from Hugging Face. The script `models/foundational_models.py` handles loading the core Sentence Encoder (e.g., Sentence-T5) and the base Auto-regressive model (e.g., GPT-2 Large) needed for subsequent steps.
+
+1.  **Configuration:**
+    Ensure your `config/base_config.yaml` file specifies the correct Hugging Face model identifiers:
+    ```yaml
+    # config/base_config.yaml
+    sentence_encoder_model_name: "google/sentence-t5-xl" # Or other Sentence-T5 variant if needed
+    auto_regressive_model_name: "gpt2-large"        # Or other base AR model if needed
+    # ... other configurations ...
+    ```
+
+2.  **Running the Loader Script:**
+    You can test loading the models by running the script directly from the project's root directory. Make sure your `dglm-env` Conda environment is activated.
+    ```bash
+    python models/foundational_models.py
+    ```
+
+    * **Note:** The first time you run this script (or any script that uses these models), the `transformers` library will automatically download the model weights and tokenizer files from the Hugging Face Hub and store them in a local cache (~/.cache/huggingface/hub by default). This might take some time and disk space depending on the model sizes and your internet connection. Subsequent runs will load the models directly from the cache.
+
+This script confirms that your environment can access and load the necessary base models required for the next steps in the DGLM implementation plan.
 
 ## Citation
 
