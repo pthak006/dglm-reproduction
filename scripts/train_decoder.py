@@ -25,7 +25,7 @@ try:
     print("Importing PromptGenerator...")
     from models.prompt_generator import PromptGenerator
     print("Importing C4TrainingDataset...")
-    from data.datasets import C4TrainingDataset
+    from data.dataset import C4TrainingDataset
     print("Importing DataCollatorForDecoderFineTuning...")
     from data.data_collator import DataCollatorForDecoderFineTuning
 except ImportError as e:
@@ -70,12 +70,18 @@ class DecoderWithPromptGenerator(PreTrainedModel):
         """
         # The collator prepares input_embeds which includes the soft prompt.
         # The prompt_generator itself is used *within* the collator, not here.
-        return self.decoder(
+        outputs = self.decoder(
             inputs_embeds=input_embeds,
             attention_mask=attention_mask,
             labels=labels,
             **kwargs
         )
+        
+        # Clean up any intermediate tensors
+        if input_embeds is not None and hasattr(input_embeds, 'grad_fn'):
+            del input_embeds
+        
+        return outputs
 
     # Implement saving/loading if needed, although Trainer might handle it
     # if submodules are correctly registered. Let's rely on Trainer for now.
@@ -122,8 +128,12 @@ def train(args):
             param.requires_grad = False
         sentence_encoder.eval() # Set to eval mode
 
+        # Clear cache after loading large models
+        torch.cuda.empty_cache()
+
     except Exception as e:
         logging.error(f"Error loading models/tokenizers: {e}", exc_info=True)
+        torch.cuda.empty_cache()
         return
 
     # --- 3. Instantiate Prompt Generator ---
@@ -142,8 +152,11 @@ def train(args):
             n_heads=n_heads, # Use decoder's head count
             dropout=args.dropout
         ).to(device)
+        
+        torch.cuda.empty_cache()
     except Exception as e:
         logging.error(f"Error instantiating PromptGenerator: {e}", exc_info=True)
+        torch.cuda.empty_cache()
         return
 
     # --- 4. Create Combined Model ---
@@ -155,6 +168,7 @@ def train(args):
         prompt_generator=prompt_generator
     ).to(device)
     logging.info(f"Combined model created. Device: {combined_model.device}")
+    torch.cuda.empty_cache()
 
     # --- 5. Load Dataset and Collator ---
     logging.info("Loading dataset and initializing data collator...")
@@ -172,10 +186,12 @@ def train(args):
             k_soft_tokens=args.k_soft_tokens,
             max_seq_len=args.max_seq_len,
             filter_threshold=args.filter_threshold,
-            noise_schedule_s=args.noise_schedule_s
+            noise_schedule_s=args.noise_schedule_s,
+            max_retries=10  # Increased from default 5 to reduce empty batches
         )
     except Exception as e:
         logging.error(f"Error setting up dataset/collator: {e}", exc_info=True)
+        torch.cuda.empty_cache()
         return
 
     # --- 6. Hugging Face Hub Login (if pushing) ---
@@ -286,6 +302,9 @@ def train(args):
         # logging.info("Saved interrupt checkpoint.")
     except Exception as e:
         logging.error(f"An error occurred during training: {e}", exc_info=True)
+    finally:
+        # Clean up memory at the end of training
+        torch.cuda.empty_cache()
 
 # --- Argument Parser ---
 if __name__ == "__main__":

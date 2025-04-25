@@ -355,6 +355,11 @@ class DataCollatorForDecoderFineTuning:
 
             # --- 8. Return Final Batch (all tensors on CPU) ---
             self.logger.debug(f"Successfully collated batch of size {current_batch_size}. Final sequence length: {final_max_len}")
+            
+            # Explicitly free GPU memory after batch processing
+            if torch.cuda.is_available() and model_device.type == 'cuda':
+                torch.cuda.empty_cache()
+                
             return {
                 'input_embeds': padded_input_embeds,
                 'attention_mask': padded_attention_mask,
@@ -363,6 +368,11 @@ class DataCollatorForDecoderFineTuning:
             
         # If we've exhausted all retries and still don't have a valid batch
         self.logger.warning(f"Failed to create a valid batch after {self.max_retries} retries.")
+        
+        # Explicitly free GPU memory after all processing attempts
+        if torch.cuda.is_available() and model_device.type == 'cuda':
+            torch.cuda.empty_cache()
+            
         return self._create_empty_batch(cpu_device)
     
     def _create_empty_batch(self, device: torch.device) -> Dict[str, torch.Tensor]:
