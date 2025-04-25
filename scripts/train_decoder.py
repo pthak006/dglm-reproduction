@@ -1,5 +1,5 @@
 # scripts/train_decoder.py
-
+print("Importing regular modules...")
 import os
 import logging
 import argparse
@@ -18,10 +18,15 @@ from transformers import (
 )
 from huggingface_hub import HfFolder, whoami # For Hub integration
 
+print("Importing custom modules...")
+
 # Import custom modules (adjust paths if necessary)
 try:
+    print("Importing PromptGenerator...")
     from models.prompt_generator import PromptGenerator
+    print("Importing C4TrainingDataset...")
     from data.datasets import C4TrainingDataset
+    print("Importing DataCollatorForDecoderFineTuning...")
     from data.data_collator import DataCollatorForDecoderFineTuning
 except ImportError as e:
     logging.error(f"Failed to import custom modules: {e}")
@@ -42,7 +47,7 @@ class DecoderWithPromptGenerator(PreTrainedModel):
     This allows the Trainer to optimize both simultaneously and handle saving/loading.
     """
     # Use the config class of the base decoder model
-    config_class = AutoModelForCausalLM.config_class
+    # config_class = AutoModelForCausalLM.config_class
 
     def __init__(self, config, decoder: PreTrainedModel, prompt_generator: PromptGenerator):
         super().__init__(config)
@@ -216,7 +221,7 @@ def train(args):
         warmup_steps=args.warmup_steps,
         per_device_train_batch_size=args.per_device_train_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
-        gradient_clipping=args.gradient_clipping,
+        max_grad_norm=args.gradient_clipping,
         optim="adamw_torch", # Use PyTorch AdamW
         adam_beta1=args.adam_beta1,
         adam_beta2=args.adam_beta2,
@@ -284,6 +289,21 @@ def train(args):
 
 # --- Argument Parser ---
 if __name__ == "__main__":
+    import torch.multiprocessing as mp
+
+    # Set the start method for multiprocessing to 'spawn'
+    # This must be done *before* any CUDA tensors or operations are created,
+    # and ideally right at the entry point of the script.
+    try:
+        mp.set_start_method('spawn', force=True)
+        print("Multiprocessing start method set to 'spawn'.") # Use print here as logging might not be configured yet
+    except RuntimeError as e:
+        # Might raise RuntimeError if context has already been set
+        print(f"Note: Could not set multiprocessing start method ('spawn'), possibly already set or context initialized: {e}")
+        pass # Continue if it's already set or raises an error benignly    
+
+
+
     parser = argparse.ArgumentParser(description="Fine-tune Decoder and Prompt Generator for DGLM.")
 
     # Paths

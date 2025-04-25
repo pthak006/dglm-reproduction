@@ -32,7 +32,7 @@ class C4TrainingDataset(IterableDataset):
             # Load the dataset structure. Actual data loading is deferred.
             logging.info(f"Loading dataset structure from {self.dataset_path}...")
             # Use memory mapping for potentially large datasets if supported
-            self.dataset = load_from_disk(self.dataset_path, keep_in_memory=False, mmap_mode='r')
+            self.dataset = load_from_disk(self.dataset_path, keep_in_memory=False)
             logging.info("Dataset structure loaded successfully.")
 
             # Verify the text field exists
