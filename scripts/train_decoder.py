@@ -215,14 +215,11 @@ def train(args):
     # --- 7. Configure Training Arguments ---
     logging.info("Configuring Training Arguments...")
     # Calculate gradient accumulation steps
-    eff_batch_size = args.per_device_train_batch_size * torch.cuda.device_count() if torch.cuda.is_available() else args.per_device_train_batch_size
-    target_total_batch_size = 64 # From paper (Table 7)
-    if target_total_batch_size % eff_batch_size != 0:
-        logging.warning(f"Target batch size {target_total_batch_size} not divisible by effective batch size {eff_batch_size}. Adjusting gradient accumulation.")
-    gradient_accumulation_steps = max(1, target_total_batch_size // eff_batch_size)
-    logging.info(f"Effective per-device batch size: {args.per_device_train_batch_size}")
+    target_total_batch_size = 16 # Reduced from 64 to 16
+    gradient_accumulation_steps = max(1, target_total_batch_size // args.batch_size)
+    logging.info(f"Batch size: {args.batch_size}")
     logging.info(f"Gradient Accumulation Steps: {gradient_accumulation_steps}")
-    logging.info(f"Target total batch size: {args.per_device_train_batch_size * gradient_accumulation_steps * torch.cuda.device_count() if torch.cuda.is_available() else args.per_device_train_batch_size * gradient_accumulation_steps}")
+    logging.info(f"Target total batch size: {args.batch_size * gradient_accumulation_steps}")
 
 
     training_args = TrainingArguments(
@@ -235,7 +232,7 @@ def train(args):
         learning_rate=args.learning_rate,
         lr_scheduler_type=args.lr_scheduler_type,
         warmup_steps=args.warmup_steps,
-        per_device_train_batch_size=args.per_device_train_batch_size,
+        per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         max_grad_norm=args.gradient_clipping,
         optim="adamw_torch", # Use PyTorch AdamW
@@ -344,8 +341,8 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=5e-6, help="Learning rate.")
     parser.add_argument("--lr_scheduler_type", type=str, default="cosine", help="Learning rate scheduler type.")
     parser.add_argument("--warmup_steps", type=int, default=5000, help="Warmup steps for LR scheduler.")
-    parser.add_argument("--per_device_train_batch_size", type=int, default=8, help="Batch size per GPU.") # Adjust based on memory
-    # gradient_accumulation_steps calculated automatically based on target=64
+    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for training.")
+    # gradient_accumulation_steps calculated automatically based on target=16
     parser.add_argument("--weight_decay", type=float, default=0.02, help="Weight decay.")
     parser.add_argument("--adam_beta1", type=float, default=0.9, help="AdamW beta1.")
     parser.add_argument("--adam_beta2", type=float, default=0.99, help="AdamW beta2.") # Note: Paper table 8 has 0.999 for diffusion? Table 7 has 0.99. Using 0.99.
