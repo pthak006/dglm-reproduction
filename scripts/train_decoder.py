@@ -215,7 +215,7 @@ def train(args):
     # --- 7. Configure Training Arguments ---
     logging.info("Configuring Training Arguments...")
     # Calculate gradient accumulation steps
-    target_total_batch_size = 16 # Reduced from 64 to 16
+    target_total_batch_size = 64 # Reduced from 64 to 16
     gradient_accumulation_steps = max(1, target_total_batch_size // args.batch_size)
     logging.info(f"Batch size: {args.batch_size}")
     logging.info(f"Gradient Accumulation Steps: {gradient_accumulation_steps}")
