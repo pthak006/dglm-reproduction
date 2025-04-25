@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- Dataset Configuration ---
 # Set limit for C4 based on our pessimistic estimate
 # Using 30M as discussed, adjust if needed
-C4_RAW_LIMIT = 1_000_000
+C4_RAW_LIMIT = 50_000_000
 
 DATASETS_TO_DOWNLOAD = {
     "c4": {
