@@ -150,3 +150,86 @@ This stage implements Section 3.1 of the DGLM paper, where the auto-regressive d
 * If `--push_to_hub` is enabled, checkpoints and the final model (containing both the fine-tuned decoder and the trained prompt generator) will be uploaded to your Hugging Face Hub repository.
 * This fine-tuned decoder and prompt generator are essential inputs for the subsequent steps involving the diffusion model.
 
+## Step 4: Training the Diffusion Model
+
+This stage implements Section 3.2 of the DGLM paper, training the Transformer-based diffusion model that learns to predict semantic embeddings of text continuations, conditioned on prefix embeddings. This model operates in the Sentence-T5 latent space and uses a v-prediction objective with a custom loss weighting.
+
+**Components Involved:**
+
+* **`models/diffusion_network.py`**: Defines the `DiffusionTransformer` architecture, including input/output processing, time conditioning, and the learnable null embedding for Classifier-Free Guidance (CFG).
+* **`data/datasets.py`**: Reuses `C4TrainingDataset` to stream C4 data.
+* **`data/diffusion_collator.py`**: Includes `DataCollatorForDiffusionTraining`, which filters C4 data, gets prefix/continuation embeddings from Sentence-T5, applies noise using a cosine schedule, calculates the target velocity (`v`), performs CFG masking, and prepares batches for the diffusion model.
+* **`scripts/train_diffusion.py`**: Orchestrates the training process, including the custom `DiffusionTrainer` subclass that implements the weighted v-prediction loss function.
+
+**Running the Diffusion Training Script:**
+
+1.  **Activate Environment:**
+    ```bash
+    conda activate dglm-env
+    ```
+2.  **Login (Optional but Recommended):**
+    * For WandB logging: `wandb login`
+    * For pushing to Hub: `huggingface-cli login`
+3.  **Execute Training:**
+    Run the training script from the project root directory. Adjust `--per_device_train_batch_size` and consider enabling `--gradient_checkpointing` based on your GPU memory. The target effective batch size is 256 (using gradient accumulation).
+    ```bash
+    python -m scripts.train_diffusion \
+        --output_dir models/diffusion_model_trained_run1 \
+        --c4_subset_path data/raw/c4 \
+        --per_device_train_batch_size 4 \
+        --gradient_checkpointing \
+        --report_to wandb \
+        --logging_steps 100 \
+        --save_steps 10000 \
+        --max_steps 250000 \
+        # --push_to_hub \ # Uncomment to enable pushing to Hub
+        # --hub_model_name dglm-diffusion-transformer-v1 # Optional: specific Hub name
+    ```
+    * Monitor GPU memory closely; batch size might need to be 1 or 2.
+    * Check hyperparameters in the script against Table 8 in the paper.
+
+**Monitoring Training (WandB Example):**
+
+* If using `--report_to wandb`, open the run URL provided in the terminal logs.
+* Monitor the `train/loss` chart, which represents the custom weighted v-prediction loss. It should decrease over time.
+
+**Expected Outcome:**
+
+* Training logs and checkpoints of the `DiffusionTransformer` (including the null embedding) will be saved locally in the specified `--output_dir`.
+* If `--push_to_hub` is enabled, checkpoints and the final model will be uploaded to your Hugging Face Hub repository.
+* This trained diffusion model is ready to generate semantic proposals during inference.
+
+## Step 5: Training Attribute Classifiers
+
+This stage implements Section 3.3 and Appendix C, training simple Logistic Regression classifiers to predict attributes (like toxicity, sentiment, topic) directly from Sentence-T5 embeddings. These classifiers enable plug-and-play guidance during diffusion sampling.
+
+**Components Involved:**
+
+* **`scripts/train_classifiers.py`**: Contains logic to:
+    * Load attribute-specific datasets (Jigsaw, Amazon Polarity, SST-2, AG News) downloaded previously.
+    * Generate Sentence-T5 embeddings for the text data in these datasets using the frozen Sentence-T5 model.
+    * Train `scikit-learn` Logistic Regression models using these embeddings and the corresponding labels.
+    * Evaluate the classifiers (optional but recommended).
+    * Save the trained classifiers using `joblib`.
+
+**Running the Classifier Training Script:**
+
+1.  **Activate Environment:**
+    ```bash
+    conda activate dglm-env
+    ```
+2.  **Verify Datasets:** Ensure the raw attribute datasets exist in the `--raw_data_dir` (default: `data/raw`) and that the column names specified within the script match the actual dataset structure.
+3.  **Execute Training:**
+    Run the script from the project root directory.
+    ```bash
+    python scripts/train_classifiers.py \
+        --raw_data_dir data/raw \
+        --output_dir models/attribute_classifiers \
+        # --embedding_batch_size 64 # Optional: Adjust batch size for embedding generation
+    ```
+
+**Expected Outcome:**
+
+* Trained `scikit-learn` Logistic Regression models saved as `.joblib` files (e.g., `toxicity_classifier.joblib`, `sentiment_classifier.joblib`) in the specified `--output_dir`.
+* These saved classifiers will be loaded during the inference stage to guide the diffusion model's proposal generation.
+
