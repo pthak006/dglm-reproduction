@@ -1,5 +1,5 @@
 # scripts/train_classifiers.py
-
+from typing import Tuple, List, Dict, Any
 import os
 import logging
 import argparse
@@ -273,49 +273,86 @@ def main(args):
     # --- Process Each Task ---
     for attribute, task_config in classifier_tasks.items():
         logging.info(f"Processing attribute: {attribute}")
-        all_embeddings_list = []
-        all_labels_list = []
-        combined_dataset = None
-
-        # Load and combine datasets if multiple are specified
         datasets_to_combine = []
-        for ds_config in task_config["dataset_configs"]:
+        processed_successfully = False # Flag to track if data was loaded
+
+        # --- MODIFIED LOGIC: Handle Toxicity Separately ---
+        if attribute == "toxicity":
             try:
-                logging.info(f"Loading dataset from: {ds_config['path']}, split: {ds_config['split']}")
-                ds = load_from_disk(ds_config['path'])
-                # Select the correct split (e.g., 'train')
+                logging.info(f"Attempting to load MANUAL Jigsaw data from: {args.jigsaw_manual_path}")
+                # Use data_dir argument for manual loading. trust_remote_code might be needed if the
+                # loading script itself isn't locally cached or needs updates.
+                ds = load_dataset('jigsaw_toxicity_pred', data_dir=args.jigsaw_manual_path, trust_remote_code=True)
+                logging.info(f"Successfully loaded manual Jigsaw data.")
+
+                # Select the 'train' split (assuming the script loads it into a dict)
                 if isinstance(ds, dict):
-                    split_ds = ds.get(ds_config['split'])
+                    split_ds = ds.get('train')
                     if split_ds is None:
-                        raise ValueError(f"Split '{ds_config['split']}' not found in {ds_config['path']}")
-                else: # Assume it's a single Dataset object
-                    split_ds = ds
+                        raise ValueError(f"'train' split not found in manually loaded Jigsaw data from {args.jigsaw_manual_path}")
+                else: # Should ideally be a dict, but handle if not
+                    split_ds = ds # Assume the loaded object is the train split
 
-                # Rename columns to standard 'text' and 'label' for consistency
-                if ds_config['text_col'] != 'text':
-                     split_ds = split_ds.rename_column(ds_config['text_col'], 'text')
-                if ds_config['label_col'] != 'label':
-                     split_ds = split_ds.rename_column(ds_config['label_col'], 'label')
+                # Rename columns (adjust based on actual CSV headers: 'comment_text', 'toxic')
+                text_col_original = 'comment_text'
+                label_col_original = 'toxic'
+                if text_col_original != 'text':
+                     split_ds = split_ds.rename_column(text_col_original, 'text')
+                if label_col_original != 'label':
+                     split_ds = split_ds.rename_column(label_col_original, 'label')
 
-                # Ensure required columns exist after renaming
                 if 'text' not in split_ds.column_names or 'label' not in split_ds.column_names:
-                     raise ValueError(f"Required columns ('text', 'label') not found in {ds_config['path']} after potential rename. Columns: {split_ds.column_names}")
+                     raise ValueError(f"Required columns ('text', 'label') not found in {args.jigsaw_manual_path} after potential rename. Columns: {split_ds.column_names}")
 
                 datasets_to_combine.append(split_ds)
-                logging.info(f"Loaded {len(split_ds)} examples from {ds_config['path']}")
+                logging.info(f"Loaded {len(split_ds)} examples from manual Jigsaw data.")
+                processed_successfully = True # Mark as successful
 
             except FileNotFoundError:
-                logging.error(f"Dataset not found at {ds_config['path']}. Skipping this source for {attribute}.")
-                continue
+                logging.error(f"Manual Jigsaw data directory not found at {args.jigsaw_manual_path}. Skipping toxicity.")
             except Exception as e:
-                logging.error(f"Error loading or processing dataset {ds_config['path']}: {e}", exc_info=True)
-                continue
+                logging.error(f"Error loading or processing manual Jigsaw data from {args.jigsaw_manual_path}: {e}", exc_info=True)
+        else:
+            # Load and combine datasets if multiple are specified
+            for ds_config in task_config["dataset_configs"]:
+                try:
+                    logging.info(f"Loading dataset from: {ds_config['path']}, split: {ds_config['split']}")
+                    ds = load_from_disk(ds_config['path'])
+                    # Select the correct split (e.g., 'train')
+                    if isinstance(ds, dict):
+                        split_ds = ds.get(ds_config['split'])
+                        if split_ds is None:
+                            raise ValueError(f"Split '{ds_config['split']}' not found in {ds_config['path']}")
+                    else: # Assume it's a single Dataset object
+                        split_ds = ds
 
-        if not datasets_to_combine:
+                    # Rename columns to standard 'text' and 'label' for consistency
+                    if ds_config['text_col'] != 'text':
+                         split_ds = split_ds.rename_column(ds_config['text_col'], 'text')
+                    if ds_config['label_col'] != 'label':
+                         split_ds = split_ds.rename_column(ds_config['label_col'], 'label')
+
+                    # Ensure required columns exist after renaming
+                    if 'text' not in split_ds.column_names or 'label' not in split_ds.column_names:
+                         raise ValueError(f"Required columns ('text', 'label') not found in {ds_config['path']} after potential rename. Columns: {split_ds.column_names}")
+
+                    datasets_to_combine.append(split_ds)
+                    logging.info(f"Loaded {len(split_ds)} examples from {ds_config['path']}")
+                    processed_successfully = True
+
+                except FileNotFoundError:
+                    logging.error(f"Dataset not found at {ds_config['path']}. Skipping this source for {attribute}.")
+                    continue
+                except Exception as e:
+                    logging.error(f"Error loading or processing dataset {ds_config['path']}: {e}", exc_info=True)
+                    continue
+
+        if not processed_successfully:
             logging.error(f"No valid datasets loaded for attribute '{attribute}'. Skipping training.")
             continue
 
         # Combine datasets if more than one was loaded successfully
+        combined_dataset = None
         if len(datasets_to_combine) > 1:
             logging.info(f"Combining {len(datasets_to_combine)} datasets for {attribute}...")
             # Ensure features match before concatenating if possible, otherwise let concatenate handle it
@@ -382,6 +419,7 @@ if __name__ == "__main__":
     parser.add_argument("--config_path", type=str, default="config/base_config.yaml", help="Path to base config YAML (to find S-T5 model).")
     parser.add_argument("--raw_data_dir", type=str, default="data/raw", help="Directory containing the downloaded raw attribute datasets.")
     parser.add_argument("--output_dir", type=str, default="models/attribute_classifiers", help="Directory to save trained classifier models.")
+    parser.add_argument("--jigsaw_manual_path", type=str, default="data/raw/jigsaw-toxicity", help="Path to Jigsaw toxicity dataset.")
 
     # Parameters
     parser.add_argument("--embedding_batch_size", type=int, default=64, help="Batch size for generating Sentence-T5 embeddings.")
@@ -393,4 +431,3 @@ if __name__ == "__main__":
 
     # --- Run Main Function ---
     main(args)
-
