@@ -249,7 +249,7 @@ def main(args):
             ],
             "use_class_weight_balanced": True,
             "preprocess_label_func": lambda labels: (np.array(labels) >= 0.5).astype(int) # Example: Binarize toxicity score
-        },
+             },
         "sentiment": {
             # Combine Amazon Polarity and SST-2 as per paper? Or train separately?
             # Let's combine for now.
