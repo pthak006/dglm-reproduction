@@ -84,7 +84,7 @@ def loss_weighting_fn(lambda_t: torch.Tensor) -> torch.Tensor:
 # --- Custom Trainer for Diffusion Loss ---
 
 class DiffusionTrainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         """
         Computes the weighted v-prediction loss.
         """
