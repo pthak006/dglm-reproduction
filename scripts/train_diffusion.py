@@ -23,7 +23,7 @@ from huggingface_hub import HfFolder, whoami # For Hub integration
 
 # Import custom modules (adjust paths if necessary)
 try:
-    from data.datasets import C4TrainingDataset
+    from data.dataset import C4TrainingDataset
     from data.diffusion_collator import DataCollatorForDiffusionTraining, get_cosine_schedule_values
     # Placeholder for the actual diffusion model - NEEDS IMPLEMENTATION
     # from models.diffusion_network import DiffusionTransformer
