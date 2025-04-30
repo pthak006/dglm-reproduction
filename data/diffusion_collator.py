@@ -7,7 +7,7 @@ import random
 import math
 from dataclasses import dataclass
 from transformers import PreTrainedTokenizer, AutoTokenizer, PreTrainedModel
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import logging
 
 # Configure basic logging
@@ -84,7 +84,7 @@ class DataCollatorForDiffusionTraining:
     filter_threshold: float = 0.3
     cfg_mask_probability: float = 0.1 # Probability of masking prefix for CFG
 
-    def __call__(self, examples: List[str]) -> Dict[str, torch.Tensor]:
+    def __call__(self, examples: List[str]) -> Optional[Dict[str, torch.Tensor]]:
         """
         Processes a batch of raw text strings for diffusion model training.
 
@@ -92,7 +92,7 @@ class DataCollatorForDiffusionTraining:
             examples: A list of raw text strings from the dataset.
 
         Returns:
-            A dictionary containing the prepared batch (CPU tensors):
+            A dictionary containing the prepared batch (CPU tensors) or None if batch is empty:
             - 'noisy_latent': Noisy continuation embedding (z_t).
             - 'prefix_embedding': Prefix embedding (x_pref) or null embedding.
             - 'time_values': Noise level lambda_t.
@@ -136,9 +136,10 @@ class DataCollatorForDiffusionTraining:
         # --- End Filtering & Splitting Loop ---
 
         if not processed_batch:
-             # Raise error if no valid examples found after filtering/splitting
-             raise ValueError(f"Data collator could not produce a valid batch from input. "
-                              f"All {batch_size} examples were filtered out. Check data or criteria.")
+            # Return None instead of raising error if no valid examples found
+            logging.warning(f"Data collator could not produce a valid batch from input. "
+                           f"All {batch_size} examples were filtered out. Skipping batch.")
+            return None
 
         current_batch_size = len(processed_batch)
 
@@ -153,13 +154,13 @@ class DataCollatorForDiffusionTraining:
                 all_texts, return_tensors="pt", padding=True, truncation=True, max_length=1024
             )
             
-            # Add error handling for sequence length
-            if sent_inputs.input_ids.shape[1] > 1024:
-                logging.warning(f"Sequence length {sent_inputs.input_ids.shape[1]} exceeds model limit even after truncation. Forcing truncation to 1024.")
-                sent_inputs = self.sentence_tokenizer(
-                    all_texts, return_tensors="pt", padding=True, truncation=True, max_length=1024
-                )
-            
+            # Check for sequences that are too long
+            valid_indices = sent_inputs.input_ids.shape[1] < 1024
+            if not valid_indices.any():
+                # All sequences too long, return None to signal retry
+                logging.warning("All sequences in batch exceed maximum length. Skipping batch.")
+                return None
+
             # Move to GPU for encoding
             sent_inputs = sent_inputs.to(model_device)
 
@@ -177,8 +178,8 @@ class DataCollatorForDiffusionTraining:
             x_cont = all_embeddings[current_batch_size:]
 
         except Exception as e:
-             logging.error(f"Error during sentence embedding: {e}", exc_info=True)
-             raise ValueError("Failed to generate sentence embeddings.") from e
+            logging.error(f"Error during sentence embedding: {e}", exc_info=True)
+            return None  # Return None instead of raising error
 
         # --- 3. Noise Sampling (Cosine Schedule) ---
         # Sample t uniformly from [0, 1] for the batch
@@ -247,4 +248,3 @@ class DataCollatorForDiffusionTraining:
 #     # logging.info("Collator output keys:", batch.keys())
 #     # for key, value in batch.items():
 #     #     logging.info(f"Shape of {key}: {value.shape}, Device: {value.device}")
-

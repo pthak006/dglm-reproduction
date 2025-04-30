@@ -132,6 +132,14 @@ class DiffusionTrainer(Trainer):
         loss = (weights * loss_mse_reduced).mean()
 
         return (loss, outputs) if return_outputs else loss
+        
+    def training_step(self, model, inputs):
+        if inputs is None or any(v is None for v in inputs.values() if isinstance(v, torch.Tensor)):
+            # Skip this batch and return zero loss
+            return torch.tensor(0.0, device=model.device)
+        
+        # Continue with normal training step
+        return super().training_step(model, inputs)
 
 # --- Main Training Function ---
 
