@@ -20,6 +20,7 @@ from transformers import (
     PreTrainedTokenizer
 )
 from huggingface_hub import HfFolder, whoami # For Hub integration
+from torch.utils.data import DataLoader
 
 # Import custom modules (adjust paths if necessary)
 try:
@@ -30,6 +31,16 @@ except ImportError as e:
     logging.error(f"Failed to import custom modules: {e}")
     logging.error("Ensure data/datasets.py, data/diffusion_collator.py, and models/diffusion_network.py exist.")
     exit(1)
+
+# --- Custom DataLoader to filter None batches ---
+class FilteringDataLoader(DataLoader):
+    """
+    Custom DataLoader that filters out None batches during iteration.
+    """
+    def __iter__(self):
+        for batch in super().__iter__():
+            if batch is not None:
+                yield batch
 
 # --- Loss Weighting Function ---
 
@@ -140,6 +151,26 @@ class DiffusionTrainer(Trainer):
         
         # Continue with normal training step
         return super().training_step(model, inputs)
+        
+    def get_train_dataloader(self) -> DataLoader:
+        """
+        Returns a custom DataLoader that filters out None batches.
+        """
+        if self.train_dataset is None:
+            raise ValueError("Trainer: training requires a train_dataset.")
+            
+        train_dataset = self.train_dataset
+        data_collator = self.data_collator
+        
+        return FilteringDataLoader(
+            train_dataset,
+            batch_size=self._train_batch_size,
+            sampler=self._get_train_sampler(),
+            collate_fn=data_collator,
+            drop_last=self.args.dataloader_drop_last,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+        )
 
 # --- Main Training Function ---
 
