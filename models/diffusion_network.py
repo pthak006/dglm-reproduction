@@ -137,6 +137,7 @@ class DiffusionTransformerConfig(PretrainedConfig):
         n_heads: int = 12,
         dropout: float = 0.1, # Default dropout, check Table 8 if specified
         time_emb_multiplier: int = 4, # Multiplier for time embedding dimension
+        gradient_checkpointing: bool = False,  # Added gradient_checkpointing parameter
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -149,6 +150,7 @@ class DiffusionTransformerConfig(PretrainedConfig):
         self.n_heads = n_heads
         self.dropout = dropout
         self.time_emb_multiplier = time_emb_multiplier
+        self.gradient_checkpointing = gradient_checkpointing  # Store the gradient_checkpointing parameter
 
         # Calculated dimensions based on Table 8 interpretation
         self.input_proj_output_dim = input_tokens * input_proj_intermediate_dim # 64 * 96 = 6144

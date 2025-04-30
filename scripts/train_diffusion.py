@@ -179,7 +179,11 @@ def train(args):
         sent_emb_dim = sentence_encoder.config.d_model
         # Instantiate the actual DiffusionTransformer
         # diffusion_model = DiffusionTransformer(sentence_emb_dim=sent_emb_dim).to(device)
-        config = DiffusionTransformerConfig(sentence_emb_dim=sent_emb_dim)
+        # config = DiffusionTransformerConfig(sentence_emb_dim=sent_emb_dim)
+        config = DiffusionTransformerConfig(
+        sentence_emb_dim=sent_emb_dim, 
+        gradient_checkpointing=args.gradient_checkpointing
+        )
         diffusion_model = DiffusionTransformer(config).to(device)
 
     except Exception as e:
