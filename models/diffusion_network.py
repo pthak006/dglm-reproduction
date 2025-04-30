@@ -211,6 +211,10 @@ class DiffusionTransformer(PreTrainedModel):
 
         logging.info(f"Initialized DiffusionTransformer: layers={config.n_layers}, heads={config.n_heads}, model_dim={config.transformer_dim}")
 
+    @property
+    def _supports_gradient_checkpointing(self):
+        return True
+
     def _set_gradient_checkpointing(self, module, value=False):
         if isinstance(module, TransformerBlock):
             module.gradient_checkpointing = value
@@ -334,4 +338,3 @@ if __name__ == '__main__':
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logging.info(f"DiffusionTransformer total trainable parameters: {num_params:,}")
     logging.info(f"Null embedding shape: {model.null_embedding.shape}")
-
