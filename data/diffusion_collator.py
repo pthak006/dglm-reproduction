@@ -155,8 +155,7 @@ class DataCollatorForDiffusionTraining:
             )
             
             # Check for sequences that are too long
-            valid_indices = sent_inputs.input_ids.shape[1] < 1024
-            if not valid_indices.any():
+            if sent_inputs.input_ids.shape[1] >= 1024:
                 # All sequences too long, return None to signal retry
                 logging.warning("All sequences in batch exceed maximum length. Skipping batch.")
                 return None
