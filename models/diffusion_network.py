@@ -215,7 +215,7 @@ class DiffusionTransformer(PreTrainedModel):
     def _supports_gradient_checkpointing(self):
         return True
 
-    def _set_gradient_checkpointing(self, module, value=False):
+    def _set_gradient_checkpointing(self, module, value=False, **kwargs):
         if isinstance(module, TransformerBlock):
             module.gradient_checkpointing = value
 
@@ -223,7 +223,9 @@ class DiffusionTransformer(PreTrainedModel):
         # Call parent method first
         super().gradient_checkpointing_enable(gradient_checkpointing_kwargs)
         # Then apply your custom implementation
-        self.apply(lambda module: self._set_gradient_checkpointing(module, value=True))
+        if gradient_checkpointing_kwargs is None:
+            gradient_checkpointing_kwargs = {}
+        self.apply(lambda module: self._set_gradient_checkpointing(module, value=True, **gradient_checkpointing_kwargs))
         logging.info("Gradient checkpointing enabled")
 
     def forward(
