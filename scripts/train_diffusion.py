@@ -25,7 +25,7 @@ from huggingface_hub import HfFolder, whoami # For Hub integration
 try:
     from data.dataset import C4TrainingDataset
     from data.diffusion_collator import DataCollatorForDiffusionTraining, get_cosine_schedule_values
-    from models.diffusion_network import DiffusionTransformer
+    from models.diffusion_network import DiffusionTransformer, DiffusionTransformerConfig
 except ImportError as e:
     logging.error(f"Failed to import custom modules: {e}")
     logging.error("Ensure data/datasets.py, data/diffusion_collator.py, and models/diffusion_network.py exist.")
@@ -178,7 +178,9 @@ def train(args):
         # Get embedding dimension from the loaded sentence encoder
         sent_emb_dim = sentence_encoder.config.d_model
         # Instantiate the actual DiffusionTransformer
-        diffusion_model = DiffusionTransformer(sentence_emb_dim=sent_emb_dim).to(device)
+        # diffusion_model = DiffusionTransformer(sentence_emb_dim=sent_emb_dim).to(device)
+        config = DiffusionTransformerConfig(sentence_emb_dim=sent_emb_dim)
+        diffusion_model = DiffusionTransformer(config).to(device)
 
     except Exception as e:
         logging.error(f"Error instantiating DiffusionTransformer: {e}", exc_info=True)
