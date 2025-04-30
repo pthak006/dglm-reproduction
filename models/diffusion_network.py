@@ -7,6 +7,7 @@ import math
 import logging
 from transformers import PreTrainedModel, PretrainedConfig
 from typing import Optional, Tuple, Union
+import torch.utils.checkpoint
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -83,23 +84,40 @@ class TransformerBlock(nn.Module):
             nn.Linear(hidden_dim, dim)
         )
         self.ff_dropout = nn.Dropout(dropout) # Dropout after residual connection
+        self.gradient_checkpointing = False
+
+    def _attention_block(self, x, time_emb, attn_mask):
+        residual = x
+        normed_x = self.norm1(x, time_emb)
+        attn_output, _ = self.attn(normed_x, normed_x, normed_x, attn_mask=attn_mask, need_weights=False)
+        return residual + attn_output
+
+    def _ff_block(self, x, time_emb):
+        residual = x
+        normed_x = self.norm2(x, time_emb)
+        ff_output = self.ff(normed_x)
+        return residual + self.ff_dropout(ff_output)
 
     def forward(self, x, time_emb, attn_mask=None):
         # x shape: (batch, seq_len, dim)
         # time_emb shape: (batch, time_emb_dim)
 
-        # Self-Attention part
-        residual = x
-        normed_x = self.norm1(x, time_emb)
-        attn_output, _ = self.attn(normed_x, normed_x, normed_x, attn_mask=attn_mask, need_weights=False)
-        # Dropout on attention output before residual? Typically included in MHA layer.
-        x = residual + attn_output
-
-        # FeedForward part
-        residual = x
-        normed_x = self.norm2(x, time_emb)
-        ff_output = self.ff(normed_x)
-        x = residual + self.ff_dropout(ff_output) # Apply dropout after FF layers
+        if self.gradient_checkpointing and self.training:
+            # Self-Attention part with checkpointing
+            x = torch.utils.checkpoint.checkpoint(
+                self._attention_block, x, time_emb, attn_mask
+            )
+            
+            # FeedForward part with checkpointing
+            x = torch.utils.checkpoint.checkpoint(
+                self._ff_block, x, time_emb
+            )
+        else:
+            # Self-Attention part without checkpointing
+            x = self._attention_block(x, time_emb, attn_mask)
+            
+            # FeedForward part without checkpointing
+            x = self._ff_block(x, time_emb)
 
         return x
 
@@ -199,6 +217,7 @@ class DiffusionTransformer(PreTrainedModel):
 
     def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
         self.apply(lambda module: self._set_gradient_checkpointing(module, value=True))
+        logging.info("Gradient checkpointing enabled")
 
     def forward(
         self,
@@ -315,5 +334,4 @@ if __name__ == '__main__':
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logging.info(f"DiffusionTransformer total trainable parameters: {num_params:,}")
     logging.info(f"Null embedding shape: {model.null_embedding.shape}")
-
 
