@@ -84,7 +84,7 @@ class TransformerBlock(nn.Module):
             nn.Linear(hidden_dim, dim)
         )
         self.ff_dropout = nn.Dropout(dropout) # Dropout after residual connection
-        self.gradient_checkpointing = True
+        self.gradient_checkpointing = False
 
     def _attention_block(self, x, time_emb, attn_mask):
         residual = x
