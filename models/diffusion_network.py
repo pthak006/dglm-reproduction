@@ -193,6 +193,13 @@ class DiffusionTransformer(PreTrainedModel):
 
         logging.info(f"Initialized DiffusionTransformer: layers={config.n_layers}, heads={config.n_heads}, model_dim={config.transformer_dim}")
 
+    def _set_gradient_checkpointing(self, module, value=False):
+        if isinstance(module, TransformerBlock):
+            module.gradient_checkpointing = value
+
+    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+        self.apply(lambda module: self._set_gradient_checkpointing(module, value=True))
+
     def forward(
         self,
         noisy_latent: torch.Tensor,        # Shape: (batch, sentence_emb_dim) - z_t
