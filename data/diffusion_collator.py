@@ -148,10 +148,18 @@ class DataCollatorForDiffusionTraining:
 
         all_texts = prefix_texts + continuation_texts
         try:
-            # Tokenize all texts together on CPU
+            # Tokenize all texts together on CPU with stricter max_length to avoid sequence length errors
             sent_inputs = self.sentence_tokenizer(
-                all_texts, return_tensors="pt", padding=True, truncation=True, max_length=512
+                all_texts, return_tensors="pt", padding=True, truncation=True, max_length=1024
             )
+            
+            # Add error handling for sequence length
+            if sent_inputs.input_ids.shape[1] > 1024:
+                logging.warning(f"Sequence length {sent_inputs.input_ids.shape[1]} exceeds model limit even after truncation. Forcing truncation to 1024.")
+                sent_inputs = self.sentence_tokenizer(
+                    all_texts, return_tensors="pt", padding=True, truncation=True, max_length=1024
+                )
+            
             # Move to GPU for encoding
             sent_inputs = sent_inputs.to(model_device)
 
@@ -239,5 +247,4 @@ class DataCollatorForDiffusionTraining:
 #     # logging.info("Collator output keys:", batch.keys())
 #     # for key, value in batch.items():
 #     #     logging.info(f"Shape of {key}: {value.shape}, Device: {value.device}")
-
 
