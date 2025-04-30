@@ -25,47 +25,11 @@ from huggingface_hub import HfFolder, whoami # For Hub integration
 try:
     from data.dataset import C4TrainingDataset
     from data.diffusion_collator import DataCollatorForDiffusionTraining, get_cosine_schedule_values
-    # Placeholder for the actual diffusion model - NEEDS IMPLEMENTATION
-    # from models.diffusion_network import DiffusionTransformer
+    from models.diffusion_network import DiffusionTransformer
 except ImportError as e:
     logging.error(f"Failed to import custom modules: {e}")
-    logging.error("Ensure data/datasets.py, data/diffusion_collator.py exist.")
-    # logging.error("Ensure models/diffusion_network.py is implemented.") # Add this when placeholder is removed
-    # exit(1) # Exit later if placeholder isn't replaced
-
-# --- Placeholder Diffusion Transformer ---
-# !!! IMPORTANT: Replace this with the actual implementation in models/diffusion_network.py !!!
-class DiffusionTransformer(PreTrainedModel):
-    """
-    Placeholder for the actual Diffusion Transformer model.
-    Needs to be implemented in models/diffusion_network.py based on Table 8.
-    Must have a 'null_embedding' parameter.
-    """
-    # Use a dummy config class or inherit from a base PretrainedConfig
-    config_class = None # Requires a proper config later
-
-    def __init__(self, config=None, sentence_emb_dim=1024, **kwargs):
-        # If config is None, create a dummy one for PreTrainedModel init
-        if config is None:
-            from transformers import PretrainedConfig
-            config = PretrainedConfig() # Basic config
-        super().__init__(config)
-        logging.warning("Using PLACEHOLDER DiffusionTransformer. Implement the real model!")
-        self.sentence_emb_dim = sentence_emb_dim
-        # Need the learnable null embedding for the collator
-        self.null_embedding = nn.Parameter(torch.randn(1, sentence_emb_dim))
-        # Dummy layer to make it a valid nn.Module
-        self.dummy_layer = nn.Linear(10, 10)
-
-    def forward(self, noisy_latent, prefix_embedding, time_values, **kwargs):
-        # This should predict velocity based on inputs
-        # Return dummy output of the correct shape for now
-        batch_size = noisy_latent.shape[0]
-        logging.warning("DiffusionTransformer placeholder returning ZEROS.")
-        return torch.zeros(batch_size, self.sentence_emb_dim, device=noisy_latent.device)
-
-    # Implement saving/loading if needed, especially for the null_embedding
-    # Trainer might handle it if registered correctly.
+    logging.error("Ensure data/datasets.py, data/diffusion_collator.py, and models/diffusion_network.py exist.")
+    exit(1)
 
 # --- Loss Weighting Function ---
 
@@ -213,13 +177,8 @@ def train(args):
     try:
         # Get embedding dimension from the loaded sentence encoder
         sent_emb_dim = sentence_encoder.config.d_model
-        # Instantiate the actual DiffusionTransformer (or placeholder for now)
+        # Instantiate the actual DiffusionTransformer
         diffusion_model = DiffusionTransformer(sentence_emb_dim=sent_emb_dim).to(device)
-        # !!! Replace Placeholder: Ensure the real DiffusionTransformer is implemented !!!
-        if isinstance(diffusion_model, DiffusionTransformer) and hasattr(diffusion_model, 'dummy_layer'):
-             logging.critical("CRITICAL: Using PLACEHOLDER DiffusionTransformer. Training will not be meaningful.")
-             # Consider exiting if placeholder is detected and not intended for testing
-             # exit(1)
 
     except Exception as e:
         logging.error(f"Error instantiating DiffusionTransformer: {e}", exc_info=True)
@@ -401,4 +360,3 @@ if __name__ == "__main__":
 
     # --- Run Training ---
     train(args)
-
