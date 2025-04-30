@@ -162,23 +162,22 @@ class DiffusionTransformer(PreTrainedModel):
     """
     Implements the Transformer-based diffusion network from DGLM paper (Fig 4, Table 8).
     Predicts velocity 'v' for v-parameterization objective.
+    Correctly supports gradient checkpointing via HF Trainer integration.
     """
     config_class = DiffusionTransformerConfig
+    supports_gradient_checkpointing = True # Declare support at class level
 
     def __init__(self, config: DiffusionTransformerConfig):
         super().__init__(config)
         self.config = config
 
         # --- Input Processing Layers ---
-        # 1a. Project noisy latent z_t
         self.latent_proj = nn.Linear(config.sentence_emb_dim, config.input_proj_output_dim)
-        # 1b. Project prefix embedding x_pref
         self.prefix_proj = nn.Linear(config.sentence_emb_dim, config.input_proj_output_dim)
-        # 1c. Project concatenated features to transformer dim
         self.concat_proj = nn.Linear(config.concat_feature_dim, config.transformer_dim)
 
         # --- Time Embedding ---
-        time_input_dim = config.transformer_dim # Time emb input dim matches model dim
+        time_input_dim = config.transformer_dim
         self.time_embedder = SinusoidalPosEmb(time_input_dim)
         time_emb_dim = time_input_dim * config.time_emb_multiplier
         self.time_mlp = nn.Sequential(
@@ -198,105 +197,76 @@ class DiffusionTransformer(PreTrainedModel):
         ])
 
         # --- Output Processing Layers ---
-        # 2a. Project transformer output back to intermediate dim per token
         self.output_proj1 = nn.Linear(config.transformer_dim, config.output_proj_intermediate_dim)
-        # 2b. Final projection from concatenated features to sentence embedding dim (velocity prediction)
         self.output_proj2 = nn.Linear(config.output_proj_input_dim, config.sentence_emb_dim)
 
         # --- Null Embedding for CFG ---
         self.null_embedding = nn.Parameter(torch.randn(1, config.sentence_emb_dim))
 
-        # --- Final Layer Norm (good practice) ---
+        # --- Final Layer Norm ---
         self.final_norm = nn.LayerNorm(config.transformer_dim)
 
         logging.info(f"Initialized DiffusionTransformer: layers={config.n_layers}, heads={config.n_heads}, model_dim={config.transformer_dim}")
+        # Apply gradient checkpointing setting from config during initialization if specified
+        if config.gradient_checkpointing:
+             self.gradient_checkpointing_enable()
 
-    @property
-    def _supports_gradient_checkpointing(self):
-        return True
 
-    def _set_gradient_checkpointing(self, module, value=False, **kwargs):
+    def _set_gradient_checkpointing(self, module, value=False):
+        """
+        Internal method called by gradient_checkpointing_enable/disable.
+        Sets the flag on the custom TransformerBlock.
+        """
         if isinstance(module, TransformerBlock):
             module.gradient_checkpointing = value
+            # logging.debug(f"Set gradient_checkpointing={value} on {module.__class__.__name__}")
 
-    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
-        # Call parent method first
-        super().gradient_checkpointing_enable(gradient_checkpointing_kwargs)
-        # Then apply your custom implementation
-        if gradient_checkpointing_kwargs is None:
-            gradient_checkpointing_kwargs = {}
-        self.apply(lambda module: self._set_gradient_checkpointing(module, value=True, **gradient_checkpointing_kwargs))
-        logging.info("Gradient checkpointing enabled")
+    # No need to override gradient_checkpointing_enable or _supports_gradient_checkpointing
+    # The parent class method will use supports_gradient_checkpointing=True and call _set_gradient_checkpointing
 
     def forward(
         self,
-        noisy_latent: torch.Tensor,        # Shape: (batch, sentence_emb_dim) - z_t
-        prefix_embedding: torch.Tensor,    # Shape: (batch, sentence_emb_dim) - x_pref or null_embedding
-        time_values: torch.Tensor,         # Shape: (batch,) - lambda_t (log SNR)
+        noisy_latent: torch.Tensor,
+        prefix_embedding: torch.Tensor,
+        time_values: torch.Tensor,
         return_dict: Optional[bool] = None,
-        **kwargs # Allow passing other args if needed, though not used currently
+        **kwargs
     ) -> Union[torch.Tensor, Tuple]:
-        """
-        Forward pass of the diffusion model.
-
-        Args:
-            noisy_latent (torch.Tensor): The noisy continuation embedding z_t.
-            prefix_embedding (torch.Tensor): The prefix embedding x_pref (potentially masked with null).
-            time_values (torch.Tensor): The log SNR values lambda_t for time conditioning.
-            return_dict (Optional[bool]): Whether to return a dictionary (not implemented yet) or just the tensor.
-
-        Returns:
-            torch.Tensor: The predicted velocity v_theta. Shape: (batch, sentence_emb_dim).
-        """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
         batch_size = noisy_latent.shape[0]
-        device = noisy_latent.device
 
         # --- 1. Input Processing ---
-        # 1a/b. Project latent and prefix, reshape
         latent_proj = self.latent_proj(noisy_latent).view(
             batch_size, self.config.input_tokens, self.config.input_proj_intermediate_dim
-        ) # B, 64, 96
+        )
         prefix_proj = self.prefix_proj(prefix_embedding).view(
             batch_size, self.config.input_tokens, self.config.input_proj_intermediate_dim
-        ) # B, 64, 96
-
-        # 1c. Concatenate along feature dim
-        concat_features = torch.cat([latent_proj, prefix_proj], dim=-1) # B, 64, 192
-
-        # 1d. Project to transformer dimension
-        transformer_input = self.concat_proj(concat_features) # B, 64, 768
+        )
+        concat_features = torch.cat([latent_proj, prefix_proj], dim=-1)
+        transformer_input = self.concat_proj(concat_features)
 
         # --- 2. Time Embedding ---
-        # Use lambda_t for time embedding
-        time_emb_sin = self.time_embedder(time_values) # B, 768
-        time_emb = self.time_mlp(time_emb_sin)         # B, time_emb_dim (e.g., 768*4)
+        time_emb_sin = self.time_embedder(time_values)
+        time_emb = self.time_mlp(time_emb_sin)
 
         # --- 3. Transformer Body ---
         x = transformer_input
+        # The apply method in gradient_checkpointing_enable/disable handles submodules.
+        # We also added logic within TransformerBlock to use torch.utils.checkpoint
         for block in self.transformer_blocks:
-            # Pass time embedding for adaptive norm conditioning
-            x = block(x, time_emb) # B, 64, 768
+            x = block(x, time_emb)
 
         # --- 4. Output Processing ---
-        # Apply final norm before output projection
         x = self.final_norm(x)
-
-        # 4a. Project back to intermediate dim
-        output_proj1 = self.output_proj1(x) # B, 64, 96
-
-        # 4b. Reshape/Concatenate
-        output_flat = output_proj1.view(batch_size, -1) # B, 6144
-
-        # 4c. Final projection to predict velocity
-        predicted_velocity = self.output_proj2(output_flat) # B, sentence_emb_dim
+        output_proj1 = self.output_proj1(x)
+        output_flat = output_proj1.view(batch_size, -1)
+        predicted_velocity = self.output_proj2(output_flat)
 
         if not return_dict:
             return predicted_velocity
         else:
-            # Can return a more structured output if needed later
             from transformers.modeling_outputs import BaseModelOutput
+            # Return in a standard HF output format if needed
             return BaseModelOutput(last_hidden_state=predicted_velocity)
 
 
