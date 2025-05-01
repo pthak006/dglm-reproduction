@@ -83,6 +83,7 @@ class DataCollatorForDiffusionTraining:
     prefix_len: int = 32
     filter_threshold: float = 0.3
     cfg_mask_probability: float = 0.1 # Probability of masking prefix for CFG
+    max_seq_len: int = 512  # Total sequence length
 
     def __call__(self, examples: List[str]) -> Optional[Dict[str, torch.Tensor]]:
         """
@@ -118,7 +119,8 @@ class DataCollatorForDiffusionTraining:
             if len(tokenized_full) <= self.prefix_len: continue
 
             prefix_tokens = tokenized_full[:self.prefix_len]
-            continuation_tokens = tokenized_full[self.prefix_len:] # Take rest as continuation
+            max_continuation_len = self.max_seq_len - self.prefix_len
+            continuation_tokens = tokenized_full[self.prefix_len:self.prefix_len + max_continuation_len]
             if not continuation_tokens: continue
 
             try:
