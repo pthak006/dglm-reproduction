@@ -15,6 +15,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 C4_RAW_LIMIT = 50_000_000
 
 DATASETS_TO_DOWNLOAD = {
+    "openwebtext": {"id": "stas/openwebtext-10k", "config": None, "limit": None, "needs_processing": "Sample version."},
+    # "jigsaw_toxicity": {"id": "jigsaw_toxicity_pred", "config":"jigsaw_toxicity_pred", "limit": None, "needs_processing": "Check if this matches the paper's 'Unintended Bias' version."},
+    "real_toxicity_prompts": {"id": "allenai/real-toxicity-prompts", "config": None, "limit": None, "needs_processing": None},
+    "amazon_polarity": {"id": "amazon_polarity", "config": None, "limit": None, "needs_processing": None},
+    "sst2": {"id": "glue", "config": "sst2", "limit": None, "needs_processing": None},
+    "ag_news": {"id": "ag_news", "config": None, "limit": None, "needs_processing": None},
     "c4": {
         "id": "allenai/c4",
         "config": "en",
@@ -24,12 +30,6 @@ DATASETS_TO_DOWNLOAD = {
         # Check allenai/c4 features on Hugging Face Hub if these are wrong
         ,"features": Features({'text': Value('string'), 'timestamp': Value('string'), 'url': Value('string')})
     },
-    "openwebtext": {"id": "stas/openwebtext-10k", "config": None, "limit": None, "needs_processing": "Sample version."},
-    "jigsaw_toxicity": {"id": "jigsaw_toxicity_pred", "config":"jigsaw_toxicity_pred", "limit": None, "needs_processing": "Check if this matches the paper's 'Unintended Bias' version."},
-    "real_toxicity_prompts": {"id": "allenai/real-toxicity-prompts", "config": None, "limit": None, "needs_processing": None},
-    "amazon_polarity": {"id": "amazon_polarity", "config": None, "limit": None, "needs_processing": None},
-    "sst2": {"id": "glue", "config": "sst2", "limit": None, "needs_processing": None},
-    "ag_news": {"id": "ag_news", "config": None, "limit": None, "needs_processing": None},
 }
 
 # --- Download Function ---
