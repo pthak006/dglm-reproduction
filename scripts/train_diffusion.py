@@ -42,7 +42,7 @@ class FilteringDataLoader(DataLoader):
             if batch is not None:
                 yield batch
 
-# --- Loss Weighting Function ---
+# --- Loss weighting function ---
 
 def loss_weighting_fn(lambda_t: torch.Tensor) -> torch.Tensor:
     """
@@ -76,7 +76,7 @@ def loss_weighting_fn(lambda_t: torch.Tensor) -> torch.Tensor:
     log_pdf_cauchy_at_0 = cauchy_dist.log_prob(zero_tensor)
     log_pdf_normal_at_0 = normal_dist.log_prob(zero_tensor)
 
-    # Calculate normalized log PDFs (log(pdf(x)/pdf(0)) = log_prob(x) - log_prob(0))
+    # Calculate normalized log PDFs (log(PDF(x)/PDF(0)) = log_prob(x) - log_prob(0))
     norm_log_pdf_cauchy = log_pdf_cauchy - log_pdf_cauchy_at_0
     norm_log_pdf_normal = log_pdf_normal - log_pdf_normal_at_0
 
@@ -92,7 +92,7 @@ def loss_weighting_fn(lambda_t: torch.Tensor) -> torch.Tensor:
 
     return weights
 
-# --- Custom Trainer for Diffusion Loss ---
+# --- Custom Trainer for diffusion loss ---
 
 class DiffusionTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
@@ -111,25 +111,15 @@ class DiffusionTrainer(Trainer):
             noisy_latent=noisy_latent,
             prefix_embedding=prefix_embedding,
             time_values=lambda_t, # Pass lambda_t to the model if needed for time embedding
-            return_dict=True # Ensure model returns dict-like or object
+            return_dict=False # Set to False to get predicted_velocity directly
         )
-        # Assuming the predicted velocity is the primary output or accessible via a key
-        # Adjust based on the actual DiffusionTransformer output structure
-        if isinstance(outputs, torch.Tensor):
-             predicted_velocity = outputs
-        elif hasattr(outputs, 'predicted_velocity'):
-             predicted_velocity = outputs.predicted_velocity # Example if output is object
-        elif isinstance(outputs, dict) and 'predicted_velocity' in outputs:
-             predicted_velocity = outputs['predicted_velocity'] # Example if output is dict
-        else:
-             # Fallback or raise error if prediction format is unknown
-             logging.error(f"Unexpected model output format: {type(outputs)}. Cannot extract predicted velocity.")
-             # Try to use the first element if it's a tuple/list? Risky.
-             if isinstance(outputs, (tuple, list)) and isinstance(outputs[0], torch.Tensor):
-                 predicted_velocity = outputs[0]
-             else:
-                 raise TypeError(f"Cannot extract predicted velocity from model output of type {type(outputs)}")
-
+        
+        # Now outputs should be the predicted_velocity tensor directly
+        predicted_velocity = outputs
+        
+        # If for some reason we still get a BaseModelOutput, extract last_hidden_state
+        if hasattr(outputs, 'last_hidden_state'):
+            predicted_velocity = outputs.last_hidden_state
 
         # Calculate MSE loss per element
         loss_mse = F.mse_loss(predicted_velocity, target_velocity, reduction='none')
@@ -144,17 +134,17 @@ class DiffusionTrainer(Trainer):
 
         return (loss, outputs) if return_outputs else loss
         
-    def training_step(self, model, inputs):
+    def training_step(self, model, inputs, num_items_in_batch=None):
         if inputs is None or any(v is None for v in inputs.values() if isinstance(v, torch.Tensor)):
             # Skip this batch and return zero loss
             return torch.tensor(0.0, device=model.device)
         
         # Continue with normal training step
-        return super().training_step(model, inputs)
+        return super().training_step(model, inputs, num_items_in_batch)
         
     def get_train_dataloader(self) -> DataLoader:
         """
-        Returns a custom DataLoader that filters out None batches.
+        Returns a custom dataloader that filters out None batches.
         """
         if self.train_dataset is None:
             raise ValueError("Trainer: training requires a train_dataset.")
@@ -172,14 +162,14 @@ class DiffusionTrainer(Trainer):
             pin_memory=self.args.dataloader_pin_memory,
         )
 
-# --- Main Training Function ---
+# --- Main training function ---
 
 def train(args):
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logging.info(f"Using device: {device}")
 
-    # --- 1. Load Configuration ---
+    # --- 1. Load configuration ---
     logging.info(f"Loading base configuration from {args.config_path}")
     try:
         with open(args.config_path, 'r') as f:
@@ -192,17 +182,17 @@ def train(args):
         logging.error(f"Error loading config: {e}", exc_info=True)
         return
 
-    # --- 2. Load Models and Tokenizers (Sentence Encoder part) ---
-    logging.info("Loading Sentence Encoder and Tokenizers...")
+    # --- 2. Load models and tokenizers (sentence encoder part) ---
+    logging.info("Loading sentence encoder and tokenizers...")
     try:
         # Tokenizers needed by the collator
         decoder_tokenizer = AutoTokenizer.from_pretrained(decoder_model_name)
         filter_tokenizer = AutoTokenizer.from_pretrained(filter_tokenizer_name)
         sentence_tokenizer = AutoTokenizer.from_pretrained(sentence_encoder_model_name)
 
-        # Sentence Encoder (frozen)
+        # Sentence encoder (frozen)
         sentence_encoder = AutoModel.from_pretrained(sentence_encoder_model_name).to(device)
-        logging.info(f"Freezing Sentence Encoder ({sentence_encoder_model_name}) parameters.")
+        logging.info(f"Freezing sentence encoder ({sentence_encoder_model_name}) parameters.")
         for param in sentence_encoder.parameters():
             param.requires_grad = False
         sentence_encoder.eval()
@@ -211,8 +201,8 @@ def train(args):
         logging.error(f"Error loading sentence encoder/tokenizers: {e}", exc_info=True)
         return
 
-    # --- 3. Instantiate Diffusion Model ---
-    logging.info("Instantiating Diffusion Transformer Model...")
+    # --- 3. Instantiate diffusion model ---
+    logging.info("Instantiating diffusion transformer model...")
     try:
         # Get embedding dimension from the loaded sentence encoder
         sent_emb_dim = sentence_encoder.config.d_model
@@ -229,7 +219,7 @@ def train(args):
         logging.error(f"Error instantiating DiffusionTransformer: {e}", exc_info=True)
         return
 
-    # --- 4. Load Dataset and Collator ---
+    # --- 4. Load dataset and collator ---
     logging.info("Loading dataset and initializing data collator...")
     try:
         train_dataset = C4TrainingDataset(dataset_path=args.c4_subset_path)
@@ -248,8 +238,8 @@ def train(args):
         logging.error(f"Error setting up dataset/collator: {e}", exc_info=True)
         return
 
-    # --- 5. Hugging Face Hub Login ---
-    # (Identical Hub login logic as in train_decoder.py)
+    # --- 5. Hugging Face Hub login ---
+    # (Identical hub login logic as in train_decoder.py)
     if args.push_to_hub:
         try:
             token = HfFolder.get_token()
@@ -266,16 +256,16 @@ def train(args):
     else:
         hub_model_id = None
 
-    # --- 6. Configure Training Arguments ---
-    logging.info("Configuring Training Arguments...")
-    # Calculate gradient accumulation (Target batch size 256 from Table 8)
+    # --- 6. Configure training arguments ---
+    logging.info("Configuring training arguments...")
+    # Calculate gradient accumulation (target batch size 256 from Table 8)
     eff_batch_size = args.per_device_train_batch_size * torch.cuda.device_count() if torch.cuda.is_available() else args.per_device_train_batch_size
     target_total_batch_size = 256
     if target_total_batch_size % eff_batch_size != 0:
         logging.warning(f"Target batch size {target_total_batch_size} not divisible by effective batch size {eff_batch_size}. Adjusting gradient accumulation.")
     gradient_accumulation_steps = max(1, target_total_batch_size // eff_batch_size)
     logging.info(f"Effective per-device batch size: {args.per_device_train_batch_size}")
-    logging.info(f"Gradient Accumulation Steps: {gradient_accumulation_steps}")
+    logging.info(f"Gradient accumulation steps: {gradient_accumulation_steps}")
     logging.info(f"Target total batch size: {args.per_device_train_batch_size * gradient_accumulation_steps * torch.cuda.device_count() if torch.cuda.is_available() else args.per_device_train_batch_size * gradient_accumulation_steps}")
 
 
@@ -317,8 +307,8 @@ def train(args):
         remove_unused_columns=False, # Important for custom collators returning extra data
     )
 
-    # --- 7. Instantiate Custom Trainer ---
-    logging.info("Initializing Custom DiffusionTrainer...")
+    # --- 7. Instantiate custom trainer ---
+    logging.info("Initializing custom DiffusionTrainer...")
     trainer = DiffusionTrainer( # Use the custom trainer
         model=diffusion_model,
         args=training_args,
@@ -326,13 +316,13 @@ def train(args):
         data_collator=data_collator,
     )
 
-    # --- 8. Start Training ---
-    logging.info("Starting Diffusion Model training...")
+    # --- 8. Start training ---
+    logging.info("Starting diffusion model training...")
     try:
         train_result = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
         logging.info("Training finished.")
 
-        # --- 9. Save Final Model & Stats ---
+        # --- 9. Save final model & stats ---
         logging.info("Saving final model...")
         trainer.save_model()
         trainer.log_metrics("train", train_result.metrics)
@@ -350,7 +340,7 @@ def train(args):
     except Exception as e:
         logging.error(f"An error occurred during training: {e}", exc_info=True)
 
-# --- Argument Parser ---
+# --- Argument parser ---
 if __name__ == "__main__":
     # Set multiprocessing start method for CUDA safety
     import torch.multiprocessing as mp
@@ -361,47 +351,47 @@ if __name__ == "__main__":
         print(f"Note: Could not set multiprocessing start method ('spawn'): {e}")
         pass
 
-    parser = argparse.ArgumentParser(description="Train Diffusion Model for DGLM.")
+    parser = argparse.ArgumentParser(description="Train diffusion model for DGLM.")
 
     # Paths
     parser.add_argument("--config_path", type=str, default="config/base_config.yaml", help="Path to base config YAML.")
     parser.add_argument("--c4_subset_path", type=str, default="data/raw/c4", help="Path to the downloaded C4 subset directory.")
     parser.add_argument("--output_dir", type=str, default="models/diffusion_model_trained", help="Directory to save checkpoints and final model.")
 
-    # Data/Model Params
+    # Data/model params
     parser.add_argument("--prefix_len", type=int, default=32, help="Length of prefix tokens for splitting.")
     parser.add_argument("--filter_threshold", type=float, default=0.3, help="Token/char ratio threshold for filtering.")
     parser.add_argument("--cfg_mask_probability", type=float, default=0.1, help="Probability of masking prefix for CFG training.")
 
-    # Training Hyperparameters (Defaults based on Table 8, with adjustments noted)
+    # Training hyperparameters (defaults based on Table 8, with adjustments noted)
     parser.add_argument("--max_steps", type=int, default=250000, help="Total training steps.")
-    parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate (Adjusted from 1e-3).")
+    parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate (adjusted from 1e-3).")
     parser.add_argument("--lr_scheduler_type", type=str, default="cosine", help="Learning rate scheduler type.")
     parser.add_argument("--warmup_steps", type=int, default=1000, help="Warmup steps for LR scheduler.") # Table 8 default
-    parser.add_argument("--per_device_train_batch_size", type=int, default=8, help="Batch size per GPU (Adjust based on memory).") # Target total 256
-    parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay (Adjusted from 0.04).")
+    parser.add_argument("--per_device_train_batch_size", type=int, default=8, help="Batch size per GPU (adjust based on memory).") # Target total 256
+    parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay (adjusted from 0.04).")
     parser.add_argument("--adam_beta1", type=float, default=0.9, help="AdamW beta1.")
     parser.add_argument("--adam_beta2", type=float, default=0.999, help="AdamW beta2.")
     parser.add_argument("--max_grad_norm", type=float, default=1.0, help="Max gradient norm for clipping.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--gradient_checkpointing", action="store_true", help="Enable gradient checkpointing to save memory.")
 
-    # Logging & Saving
+    # Logging & saving
     parser.add_argument("--logging_steps", type=int, default=100, help="Log metrics every N steps.")
     parser.add_argument("--save_steps", type=int, default=10000, help="Save checkpoint every N steps.")
     parser.add_argument("--save_total_limit", type=int, default=2, help="Maximum number of checkpoints to keep.")
     parser.add_argument("--report_to", type=str, default="tensorboard", help="Integrations to report results to (e.g., 'tensorboard', 'wandb').")
 
-    # Hub Integration
+    # Hub integration
     parser.add_argument("--push_to_hub", action="store_true", help="Push model checkpoints and final model to Hub.")
     parser.add_argument("--hub_model_name", type=str, default="dglm-diffusion-transformer", help="Name for the model on the Hub.")
     parser.add_argument("--hub_strategy", type=str, default="checkpoint", help="Hub saving strategy.")
 
     # Other
-    parser.add_argument("--dataloader_num_workers", type=int, default=2, help="Number of workers for DataLoader.")
+    parser.add_argument("--dataloader_num_workers", type=int, default=2, help="Number of workers for dataloader.")
     parser.add_argument("--resume_from_checkpoint", type=str, default=None, help="Path to checkpoint to resume training from.")
 
     args = parser.parse_args()
 
-    # --- Run Training ---
+    # --- Run training ---
     train(args)

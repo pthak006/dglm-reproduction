@@ -83,7 +83,7 @@ class DataCollatorForDiffusionTraining:
     prefix_len: int = 32
     filter_threshold: float = 0.3
     cfg_mask_probability: float = 0.1 # Probability of masking prefix for CFG
-    max_seq_len: int = 512  # Total sequence length
+    max_seq_len: int = 800  # Total sequence length
 
     def __call__(self, examples: List[str]) -> Optional[Dict[str, torch.Tensor]]:
         """
